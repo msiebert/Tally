@@ -37,3 +37,14 @@ neighbours, so a reorder rewrites one row. When two neighbours have no room
 between them, the list is renumbered once and the placement retried. Ties are
 broken by item ID. `reorder_item` (and the `position` option on `add_items` and
 `move_item`) are the only way to express priority.
+
+## Use with Claude Code
+
+```sh
+claude mcp add tally --scope user -- /path/to/tally
+```
+
+To check a real agent against it end to end, run `scripts/e2e-claude-code.sh`
+(needs the `claude` CLI, logged in). It registers Tally with a scratch
+database, asks Claude to run a small launch-checklist workflow, and prints what
+ended up in the database.
