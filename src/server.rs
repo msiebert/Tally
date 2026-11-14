@@ -14,7 +14,27 @@ use rusqlite::Connection;
 use serde_json::Value;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-const INSTRUCTIONS: &str = "Tally is a list-making app for agents.";
+const INSTRUCTIONS: &str = "\
+Tally keeps lists of items for you. Refer to lists by name (case-insensitive) or ID, and to items and dependencies by item ID.
+
+Instructions: lists and tags can carry instructions from the user. get_list returns the list's instructions and, in tag_instructions, \
+the instructions for the tags on that page; search_items returns tag_instructions. Read and follow them. They come only on the first page of a read. \
+Pass include_instructions / include_tag_instructions = false when you already have them in context, and read again if you lose them.
+
+Tags: create a tag with create_tag before using it. add_items and update_item reject unknown tags.
+
+Order: list order is priority. get_list shows items in order and hides done items unless you pass status. \
+Use reorder_item, or position (top, bottom, {after: id}) on add_items and move_item.
+
+Dependencies: add_dependency makes an item wait for another, in any list. An item is blocked while any blocker is not done or cancelled. \
+Reads show blocked and open_blockers, and unblocked_only returns just the workable items. Completing a blocked item is allowed but warns.
+
+Pagination: reads return next_cursor (null on the last page) and total_count. Pass next_cursor back unchanged. limit defaults to 50, max 200.
+
+Deletes that would break links are refused, and the error says what is in the way: an item that blocks others or a list whose items block \
+items elsewhere (remove_dependency first), a tag still in use (drop it with update_item). Errors say how to fix the problem; read them and adjust.
+
+add_items is not idempotent and does not dedupe, so don't repeat a call that succeeded.";
 
 #[derive(Clone)]
 pub struct TallyServer {
@@ -78,8 +98,8 @@ impl TallyServer {
     }
 
     #[tool(
-        description = "Delete a list and all of its items. Refused if any item in it blocks an item in another list; \
-                       the error names those items so you can remove the dependencies first."
+        description = "Delete a list and all its items. Refused if any item in it blocks an item in another list; the error names them. \
+                       Remove those dependencies first (remove_dependency)."
     )]
     fn delete_list(&self, Parameters(p): Parameters<DeleteList>) -> CallToolResult {
         reply(lists::delete(&mut self.db(), &p.list))
@@ -117,25 +137,25 @@ impl TallyServer {
     }
 
     #[tool(
-        description = "Delete a tag. Refused while any item still uses it; the error gives the item count."
+        description = "Delete a tag. Refused while any item still uses it; the error gives the item count. \
+                       Remove the tag from those items first (update_item with the tags to keep)."
     )]
     fn delete_tag(&self, Parameters(p): Parameters<DeleteTag>) -> CallToolResult {
         reply(tags::delete(&mut self.db(), &p.tag))
     }
 
     #[tool(
-        description = "Add items to a list in one call (max 200). All-or-nothing: if any item is invalid, none are added. \
-                       Tags must already exist (create_tag first); unknown tags are rejected. \
-                       Not idempotent: calling twice adds the items twice. Returns the new item IDs in order."
+        description = "Tags must already exist (create_tag first); unknown tags are rejected. Add up to 200 items to a list in one call, \
+                       all-or-nothing: if any item is invalid, none are added. Not idempotent: calling twice adds the items twice. \
+                       Returns the new item IDs in order."
     )]
     fn add_items(&self, Parameters(p): Parameters<AddItems>) -> CallToolResult {
         reply(items::add(&mut self.db(), &p.list, &p.items))
     }
 
     #[tool(
-        description = "Change an item's title, notes, status (todo, doing, done, cancelled) and/or tags. \
-                       tags replaces the whole tag set, and every tag must already exist (create_tag first). \
-                       Empty notes clear them."
+        description = "Tags must already exist (create_tag first); unknown tags are rejected. Change an item's title, notes (empty clears), \
+                       status (todo, doing, done, cancelled) and/or tags. tags replaces the item's whole tag set."
     )]
     fn update_item(&self, Parameters(p): Parameters<UpdateItem>) -> CallToolResult {
         reply(items::update(
@@ -156,8 +176,8 @@ impl TallyServer {
     }
 
     #[tool(
-        description = "Delete an item. Refused if other items depend on it; the error lists them by ID and title \
-                       so you can remove those dependencies first."
+        description = "Delete an item. Refused if other items depend on it; the error lists them by ID and title. \
+                       Remove those dependencies first (remove_dependency), or complete or cancel the item instead."
     )]
     fn delete_item(&self, Parameters(p): Parameters<ItemRef>) -> CallToolResult {
         reply(items::delete(&mut self.db(), p.item))
@@ -195,11 +215,9 @@ impl TallyServer {
 
     #[tool(
         description = "Show a list's items in order, with tags, notes, timestamps, and a blocked flag listing open blockers. \
-                       Done items are hidden unless you pass status. Paginated: pass next_cursor for the next page; \
-                       total_count is the number of matching items. \
-                       The first page also returns the list's instructions and, in tag_instructions, instructions for the tags \
-                       on the page. Read and follow them. Pass include_instructions / include_tag_instructions = false \
-                       if you already have them in context."
+                       Done items are hidden unless you pass status. Paginated: pass next_cursor for the next page. \
+                       The first page also returns the list's instructions and tag_instructions for tags on the page: read and follow them. \
+                       Pass include_instructions / include_tag_instructions = false if you already have them."
     )]
     fn get_list(&self, Parameters(p): Parameters<GetList>) -> CallToolResult {
         let statuses = p.status.map(OneOrMany::into_vec);
