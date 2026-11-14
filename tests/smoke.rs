@@ -13,7 +13,16 @@ fn server_initializes_and_lists_tools() {
     assert!(s.init["instructions"].is_string());
     assert_eq!(
         s.tool_names(),
-        ["create_list", "delete_list", "list_lists", "update_list"]
+        [
+            "create_list",
+            "create_tag",
+            "delete_list",
+            "delete_tag",
+            "list_lists",
+            "list_tags",
+            "update_list",
+            "update_tag"
+        ]
     );
 
     // The database file is created and migrated at startup.

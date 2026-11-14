@@ -2,7 +2,7 @@
 
 use crate::error::Result as ToolResult;
 use crate::params::*;
-use crate::store::lists;
+use crate::store::{lists, tags};
 use rmcp::{
     ServerHandler,
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
@@ -82,6 +82,44 @@ impl TallyServer {
     )]
     fn delete_list(&self, Parameters(p): Parameters<DeleteList>) -> CallToolResult {
         reply(lists::delete(&mut self.db(), &p.list))
+    }
+
+    #[tool(
+        description = "Create a tag. Tags must be created here before they can be used: add_items and update_item \
+                       reject tags that don't exist. Optional instructions tell agents how to treat items with this tag."
+    )]
+    fn create_tag(&self, Parameters(p): Parameters<CreateTag>) -> CallToolResult {
+        reply(tags::create(
+            &mut self.db(),
+            &p.name,
+            p.instructions.as_deref(),
+        ))
+    }
+
+    #[tool(
+        description = "List all tags with how many items use each. Paginated: pass next_cursor to get the next page."
+    )]
+    fn list_tags(&self, Parameters(p): Parameters<ListTags>) -> CallToolResult {
+        reply(tags::list(&self.db(), p.cursor.as_deref(), p.limit))
+    }
+
+    #[tool(
+        description = "Rename a tag and/or change its instructions. An empty instructions string clears them."
+    )]
+    fn update_tag(&self, Parameters(p): Parameters<UpdateTag>) -> CallToolResult {
+        reply(tags::update(
+            &mut self.db(),
+            &p.tag,
+            p.name.as_deref(),
+            p.instructions.as_deref(),
+        ))
+    }
+
+    #[tool(
+        description = "Delete a tag. Refused while any item still uses it; the error gives the item count."
+    )]
+    fn delete_tag(&self, Parameters(p): Parameters<DeleteTag>) -> CallToolResult {
+        reply(tags::delete(&mut self.db(), &p.tag))
     }
 }
 

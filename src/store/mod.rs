@@ -3,6 +3,7 @@
 
 pub mod lists;
 pub mod refs;
+pub mod tags;
 
 use crate::error::{Result, ToolError};
 
