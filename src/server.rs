@@ -196,7 +196,10 @@ impl TallyServer {
     #[tool(
         description = "Show a list's items in order, with tags, notes, timestamps, and a blocked flag listing open blockers. \
                        Done items are hidden unless you pass status. Paginated: pass next_cursor for the next page; \
-                       total_count is the number of matching items."
+                       total_count is the number of matching items. \
+                       The first page also returns the list's instructions and, in tag_instructions, instructions for the tags \
+                       on the page. Read and follow them. Pass include_instructions / include_tag_instructions = false \
+                       if you already have them in context."
     )]
     fn get_list(&self, Parameters(p): Parameters<GetList>) -> CallToolResult {
         let statuses = p.status.map(OneOrMany::into_vec);
@@ -209,13 +212,17 @@ impl TallyServer {
                 unblocked_only: p.unblocked_only.unwrap_or(false),
                 cursor: p.cursor.as_deref(),
                 limit: p.limit,
+                include_instructions: p.include_instructions.unwrap_or(true),
+                include_tag_instructions: p.include_tag_instructions.unwrap_or(true),
             },
         ))
     }
 
     #[tool(
         description = "Search items across all lists, most recently updated first. Combine text, list, tag, status and \
-                       unblocked_only. Searches all statuses unless you pass status. Paginated like get_list."
+                       unblocked_only. Searches all statuses unless you pass status. Paginated like get_list. \
+                       The first page returns tag_instructions for the tags on the page (read and follow them); \
+                       pass include_tag_instructions = false if you already have them."
     )]
     fn search_items(&self, Parameters(p): Parameters<SearchItems>) -> CallToolResult {
         let statuses = p.status.map(OneOrMany::into_vec);
@@ -229,6 +236,8 @@ impl TallyServer {
                 unblocked_only: p.unblocked_only.unwrap_or(false),
                 cursor: p.cursor.as_deref(),
                 limit: p.limit,
+                include_instructions: false,
+                include_tag_instructions: p.include_tag_instructions.unwrap_or(true),
             },
         ))
     }

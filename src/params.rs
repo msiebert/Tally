@@ -191,6 +191,10 @@ pub struct GetList {
     pub tag: Option<String>,
     /// Only items with no open blockers.
     pub unblocked_only: Option<bool>,
+    /// Include the list's instructions (default true). Pass false if you already have them in context.
+    pub include_instructions: Option<bool>,
+    /// Include instructions for the tags on these items (default true). Pass false if you already have them in context.
+    pub include_tag_instructions: Option<bool>,
     /// The next_cursor from the previous page. Omit for the first page.
     pub cursor: Option<String>,
     /// Page size (default 50, max 200).
@@ -209,6 +213,8 @@ pub struct SearchItems {
     pub status: Option<OneOrMany<Status>>,
     /// Only items with no open blockers.
     pub unblocked_only: Option<bool>,
+    /// Include instructions for the tags on these items (default true). Pass false if you already have them in context.
+    pub include_tag_instructions: Option<bool>,
     /// The next_cursor from the previous page. Omit for the first page.
     pub cursor: Option<String>,
     /// Page size (default 50, max 200).
