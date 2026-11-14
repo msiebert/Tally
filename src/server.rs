@@ -2,7 +2,7 @@
 
 use crate::error::Result as ToolResult;
 use crate::params::*;
-use crate::store::{lists, tags};
+use crate::store::{items, lists, tags};
 use rmcp::{
     ServerHandler,
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
@@ -120,6 +120,59 @@ impl TallyServer {
     )]
     fn delete_tag(&self, Parameters(p): Parameters<DeleteTag>) -> CallToolResult {
         reply(tags::delete(&mut self.db(), &p.tag))
+    }
+
+    #[tool(
+        description = "Add items to a list in one call (max 200). All-or-nothing: if any item is invalid, none are added. \
+                       Tags must already exist (create_tag first); unknown tags are rejected. \
+                       Not idempotent: calling twice adds the items twice. Returns the new item IDs in order."
+    )]
+    fn add_items(&self, Parameters(p): Parameters<AddItems>) -> CallToolResult {
+        reply(items::add(&mut self.db(), &p.list, &p.items))
+    }
+
+    #[tool(
+        description = "Change an item's title, notes, status (todo, doing, done, cancelled) and/or tags. \
+                       tags replaces the whole tag set, and every tag must already exist (create_tag first). \
+                       Empty notes clear them."
+    )]
+    fn update_item(&self, Parameters(p): Parameters<UpdateItem>) -> CallToolResult {
+        reply(items::update(
+            &mut self.db(),
+            p.item,
+            p.title.as_deref(),
+            p.notes.as_deref(),
+            p.status,
+            p.tags.as_deref(),
+        ))
+    }
+
+    #[tool(
+        description = "Mark an item done. Allowed even if it still has open blockers; the response then includes a warning."
+    )]
+    fn complete_item(&self, Parameters(p): Parameters<ItemRef>) -> CallToolResult {
+        reply(items::complete(&mut self.db(), p.item))
+    }
+
+    #[tool(
+        description = "Delete an item. Refused if other items depend on it; the error lists them by ID and title \
+                       so you can remove those dependencies first."
+    )]
+    fn delete_item(&self, Parameters(p): Parameters<ItemRef>) -> CallToolResult {
+        reply(items::delete(&mut self.db(), p.item))
+    }
+
+    #[tool(
+        description = "Move an item to another list (or reposition it within its own list). Goes to the bottom unless position is given. \
+                       Dependencies are kept."
+    )]
+    fn move_item(&self, Parameters(p): Parameters<MoveItem>) -> CallToolResult {
+        reply(items::move_to(
+            &mut self.db(),
+            p.item,
+            &p.to_list,
+            p.position,
+        ))
     }
 }
 

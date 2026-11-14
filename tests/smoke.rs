@@ -14,14 +14,19 @@ fn server_initializes_and_lists_tools() {
     assert_eq!(
         s.tool_names(),
         [
+            "add_items",
+            "complete_item",
             "create_list",
             "create_tag",
+            "delete_item",
             "delete_list",
             "delete_tag",
             "list_lists",
             "list_tags",
+            "move_item",
+            "update_item",
             "update_list",
-            "update_tag"
+            "update_tag",
         ]
     );
 

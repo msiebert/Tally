@@ -1,9 +1,53 @@
 //! Tool parameter types. Doc comments become the descriptions agents see in the
 //! tool schemas, so they are written for agents and kept short.
 
+use crate::store::items::{NewItem, Status};
+use crate::store::position::Position;
 use crate::store::refs::NameOrId;
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer, de::Error};
+
+/// Item IDs are integers, but agents sometimes send them as text ("12" or "#12").
+pub fn lenient_id<'de, D: Deserializer<'de>>(d: D) -> Result<i64, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Raw {
+        Num(i64),
+        Text(String),
+    }
+    match Raw::deserialize(d)? {
+        Raw::Num(n) => Ok(n),
+        Raw::Text(s) => s
+            .trim()
+            .trim_start_matches('#')
+            .parse()
+            .map_err(|_| D::Error::custom(format!("expected an item ID, got '{s}'"))),
+    }
+}
+
+/// Like [`lenient_id`], for an optional list of IDs.
+pub fn lenient_ids_opt<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Vec<i64>>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Raw {
+        Num(i64),
+        Text(String),
+    }
+    let Some(raw) = Option::<Vec<Raw>>::deserialize(d)? else {
+        return Ok(None);
+    };
+    raw.into_iter()
+        .map(|r| match r {
+            Raw::Num(n) => Ok(n),
+            Raw::Text(s) => s
+                .trim()
+                .trim_start_matches('#')
+                .parse()
+                .map_err(|_| D::Error::custom(format!("expected an item ID, got '{s}'"))),
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(Some)
+}
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct CreateList {
@@ -67,4 +111,45 @@ pub struct UpdateTag {
 pub struct DeleteTag {
     /// The tag's name or numeric ID.
     pub tag: NameOrId,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct AddItems {
+    /// The list's name or numeric ID.
+    pub list: NameOrId,
+    /// Items to add (max 200). All-or-nothing: if any item is invalid, none are added.
+    pub items: Vec<NewItem>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct UpdateItem {
+    /// Item ID.
+    #[serde(deserialize_with = "lenient_id")]
+    pub item: i64,
+    /// New title.
+    pub title: Option<String>,
+    /// New notes (markdown, max 4,000 characters). An empty string clears them.
+    pub notes: Option<String>,
+    /// New status.
+    pub status: Option<Status>,
+    /// Replaces the item's whole tag set; an empty list removes all tags. Tags must already exist.
+    pub tags: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ItemRef {
+    /// Item ID.
+    #[serde(deserialize_with = "lenient_id")]
+    pub item: i64,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct MoveItem {
+    /// Item ID.
+    #[serde(deserialize_with = "lenient_id")]
+    pub item: i64,
+    /// The destination list's name or numeric ID.
+    pub to_list: NameOrId,
+    /// Where in the destination list: "top", "bottom" (default), or {"after": item_id}.
+    pub position: Option<Position>,
 }
