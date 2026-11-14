@@ -2,6 +2,7 @@
 
 use crate::error::Result as ToolResult;
 use crate::params::*;
+use crate::store::reads::{self, ReadOptions};
 use crate::store::{dependencies, items, lists, tags};
 use rmcp::{
     ServerHandler,
@@ -190,6 +191,46 @@ impl TallyServer {
     )]
     fn remove_dependency(&self, Parameters(p): Parameters<Dependency>) -> CallToolResult {
         reply(dependencies::remove(&mut self.db(), p.item, p.blocked_by))
+    }
+
+    #[tool(
+        description = "Show a list's items in order, with tags, notes, timestamps, and a blocked flag listing open blockers. \
+                       Done items are hidden unless you pass status. Paginated: pass next_cursor for the next page; \
+                       total_count is the number of matching items."
+    )]
+    fn get_list(&self, Parameters(p): Parameters<GetList>) -> CallToolResult {
+        let statuses = p.status.map(OneOrMany::into_vec);
+        reply(reads::get_list(
+            &self.db(),
+            &p.list,
+            &ReadOptions {
+                statuses: statuses.as_deref(),
+                tag: p.tag.as_deref(),
+                unblocked_only: p.unblocked_only.unwrap_or(false),
+                cursor: p.cursor.as_deref(),
+                limit: p.limit,
+            },
+        ))
+    }
+
+    #[tool(
+        description = "Search items across all lists, most recently updated first. Combine text, list, tag, status and \
+                       unblocked_only. Searches all statuses unless you pass status. Paginated like get_list."
+    )]
+    fn search_items(&self, Parameters(p): Parameters<SearchItems>) -> CallToolResult {
+        let statuses = p.status.map(OneOrMany::into_vec);
+        reply(reads::search_items(
+            &self.db(),
+            p.text.as_deref(),
+            p.list.as_ref(),
+            &ReadOptions {
+                statuses: statuses.as_deref(),
+                tag: p.tag.as_deref(),
+                unblocked_only: p.unblocked_only.unwrap_or(false),
+                cursor: p.cursor.as_deref(),
+                limit: p.limit,
+            },
+        ))
     }
 }
 

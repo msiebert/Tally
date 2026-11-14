@@ -52,7 +52,7 @@ fn existing_names(conn: &Connection, max: usize) -> Result<Vec<String>> {
     Ok(names)
 }
 
-fn existing_hint(conn: &Connection) -> Result<String> {
+pub(crate) fn existing_hint(conn: &Connection) -> Result<String> {
     let names = existing_names(conn, 30)?;
     Ok(if names.is_empty() {
         "There are no tags yet.".to_string()

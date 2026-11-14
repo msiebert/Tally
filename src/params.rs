@@ -163,3 +163,54 @@ pub struct Dependency {
     #[serde(deserialize_with = "lenient_id")]
     pub blocked_by: i64,
 }
+
+/// A single value or a list of values.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum OneOrMany<T> {
+    One(T),
+    Many(Vec<T>),
+}
+
+impl<T> OneOrMany<T> {
+    pub fn into_vec(self) -> Vec<T> {
+        match self {
+            OneOrMany::One(v) => vec![v],
+            OneOrMany::Many(v) => v,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetList {
+    /// The list's name or numeric ID.
+    pub list: NameOrId,
+    /// Show only these statuses (one, or a list). Done items are hidden unless you ask for them here.
+    pub status: Option<OneOrMany<Status>>,
+    /// Show only items with this tag.
+    pub tag: Option<String>,
+    /// Only items with no open blockers.
+    pub unblocked_only: Option<bool>,
+    /// The next_cursor from the previous page. Omit for the first page.
+    pub cursor: Option<String>,
+    /// Page size (default 50, max 200).
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SearchItems {
+    /// Case-insensitive text to find in titles and notes.
+    pub text: Option<String>,
+    /// Only items in this list (name or ID).
+    pub list: Option<NameOrId>,
+    /// Only items with this tag.
+    pub tag: Option<String>,
+    /// Only these statuses (one, or a list). By default all statuses are searched, including done.
+    pub status: Option<OneOrMany<Status>>,
+    /// Only items with no open blockers.
+    pub unblocked_only: Option<bool>,
+    /// The next_cursor from the previous page. Omit for the first page.
+    pub cursor: Option<String>,
+    /// Page size (default 50, max 200).
+    pub limit: Option<u32>,
+}
