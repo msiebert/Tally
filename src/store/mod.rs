@@ -1,6 +1,7 @@
 //! Storage operations. Each function takes a connection and returns the JSON
 //! shown to the agent, or a [`ToolError`] explaining what to fix.
 
+pub mod dependencies;
 pub mod items;
 pub mod lists;
 pub mod position;

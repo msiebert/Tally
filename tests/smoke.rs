@@ -14,6 +14,7 @@ fn server_initializes_and_lists_tools() {
     assert_eq!(
         s.tool_names(),
         [
+            "add_dependency",
             "add_items",
             "complete_item",
             "create_list",
@@ -24,6 +25,7 @@ fn server_initializes_and_lists_tools() {
             "list_lists",
             "list_tags",
             "move_item",
+            "remove_dependency",
             "update_item",
             "update_list",
             "update_tag",

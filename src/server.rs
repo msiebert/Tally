@@ -2,7 +2,7 @@
 
 use crate::error::Result as ToolResult;
 use crate::params::*;
-use crate::store::{items, lists, tags};
+use crate::store::{dependencies, items, lists, tags};
 use rmcp::{
     ServerHandler,
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
@@ -173,6 +173,23 @@ impl TallyServer {
             &p.to_list,
             p.position,
         ))
+    }
+
+    #[tool(
+        description = "Make an item wait for another item (blocked_by), which can be in a different list. \
+                       Rejected if it would create a cycle; the error names the cycle. \
+                       An item counts as blocked while any blocker is neither done nor cancelled."
+    )]
+    fn add_dependency(&self, Parameters(p): Parameters<Dependency>) -> CallToolResult {
+        reply(dependencies::add(&mut self.db(), p.item, p.blocked_by))
+    }
+
+    #[tool(
+        description = "Remove a dependency so the item no longer waits for blocked_by. \
+                       Do this first when delete_item or delete_list is refused because items depend on each other."
+    )]
+    fn remove_dependency(&self, Parameters(p): Parameters<Dependency>) -> CallToolResult {
+        reply(dependencies::remove(&mut self.db(), p.item, p.blocked_by))
     }
 }
 

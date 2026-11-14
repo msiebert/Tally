@@ -153,3 +153,13 @@ pub struct MoveItem {
     /// Where in the destination list: "top", "bottom" (default), or {"after": item_id}.
     pub position: Option<Position>,
 }
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct Dependency {
+    /// The item that has to wait.
+    #[serde(deserialize_with = "lenient_id")]
+    pub item: i64,
+    /// The item it waits for. It can be in any list.
+    #[serde(deserialize_with = "lenient_id")]
+    pub blocked_by: i64,
+}
