@@ -48,3 +48,12 @@ To check a real agent against it end to end, run `scripts/e2e-claude-code.sh`
 (needs the `claude` CLI, logged in). It registers Tally with a scratch
 database, asks Claude to run a small launch-checklist workflow, and prints what
 ended up in the database.
+
+## Export
+
+Backups are manual. `tally export` writes every list, item, tag and dependency:
+
+```sh
+tally export                                  # JSON to stdout
+tally export --format markdown -o backup.md   # readable; refuses to overwrite
+```
