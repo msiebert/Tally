@@ -5,7 +5,10 @@ use rusqlite::Connection;
 use std::path::{Path, PathBuf};
 
 /// Migrations are append-only. `PRAGMA user_version` records how many have run.
-const MIGRATIONS: &[&str] = &[include_str!("../migrations/001_init.sql")];
+const MIGRATIONS: &[&str] = &[
+    include_str!("../migrations/001_init.sql"),
+    include_str!("../migrations/002_list_name_nocase.sql"),
+];
 
 /// `TALLY_DB` if set and non-empty, otherwise `~/.local/share/tally/tally.db`.
 pub fn default_db_path() -> PathBuf {

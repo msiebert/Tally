@@ -2,24 +2,33 @@
 
 mod common;
 use common::*;
-use serde_json::json;
 
 #[test]
 fn server_initializes_and_lists_tools() {
     let db = temp_db("smoke");
-    let responses = run_session(
-        &db,
-        &[json!({"jsonrpc":"2.0","id":1,"method":"tools/list"})],
+    let mut s = Session::start(&db);
+
+    assert_eq!(s.init["serverInfo"]["name"], "tally");
+    assert!(s.init["capabilities"]["tools"].is_object());
+    assert!(s.init["instructions"].is_string());
+    assert_eq!(
+        s.tool_names(),
+        ["create_list", "delete_list", "list_lists", "update_list"]
     );
-
-    let init = response_for(&responses, 0);
-    assert_eq!(init["result"]["serverInfo"]["name"], "tally");
-    assert!(init["result"]["capabilities"]["tools"].is_object());
-    assert!(init["result"]["instructions"].is_string());
-
-    let tools = response_for(&responses, 1);
-    assert!(tools["result"]["tools"].is_array(), "got {tools}");
 
     // The database file is created and migrated at startup.
     assert!(db.exists());
+}
+
+#[test]
+fn data_survives_a_restart() {
+    let db = temp_db("restart");
+    {
+        let mut s = Session::start(&db);
+        s.call("create_list", serde_json::json!({"name": "Persistent"}))
+            .json();
+    }
+    let mut s = Session::start(&db);
+    let lists = s.call("list_lists", serde_json::json!({})).json();
+    assert_eq!(lists["lists"][0]["name"], "Persistent");
 }
