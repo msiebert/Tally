@@ -27,6 +27,7 @@ fn server_initializes_and_lists_tools() {
             "list_tags",
             "move_item",
             "remove_dependency",
+            "reorder_item",
             "search_items",
             "update_item",
             "update_list",

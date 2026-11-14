@@ -1,7 +1,7 @@
 //! Item operations: add, update, complete, delete, move, and the compact item view
 //! shared by every tool that returns items.
 
-use super::position::{Placement, Position, place};
+use super::position::{Edge, Placement, Position, place};
 use super::refs::NameOrId;
 use super::{NOW, lists, tags};
 use crate::error::{Result, ToolError};
@@ -360,6 +360,35 @@ pub fn move_to(
     Ok(json!({"item": view(conn, id, true)?}))
 }
 
+/// Change an item's place within its own list. Pass exactly one of
+/// `after_item` or `to`.
+pub fn reorder(
+    conn: &mut Connection,
+    id: i64,
+    after_item: Option<i64>,
+    to: Option<Edge>,
+) -> Result<Value> {
+    let placement = match (after_item, to) {
+        (Some(after), None) => Placement::After(after),
+        (None, Some(Edge::Top)) => Placement::Top,
+        (None, Some(Edge::Bottom)) => Placement::Bottom,
+        _ => {
+            return Err(ToolError::new(
+                "Pass exactly one of after_item (an item ID in the same list) or to (\"top\" or \"bottom\").",
+            ));
+        }
+    };
+    let item = find(conn, id)?;
+    let tx = conn.transaction()?;
+    let pos = place(&tx, item.list_id, placement, Some(id))?;
+    tx.execute(
+        &format!("UPDATE item SET position = ?1, updated_at = {NOW} WHERE id = ?2"),
+        params![pos, id],
+    )?;
+    tx.commit()?;
+    Ok(json!({"item": view(conn, id, true)?}))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -713,5 +742,148 @@ mod tests {
         .to_string();
         assert!(err.contains("isn't in list 'work'"), "{err}");
         assert_eq!(titles(&conn, "inbox"), ["a", "other"]);
+    }
+
+    fn order_ids(conn: &Connection, list: &str) -> Vec<i64> {
+        let id = lists::find(conn, &name(list)).unwrap().id;
+        let mut stmt = conn
+            .prepare("SELECT id FROM item WHERE list_id = ?1 ORDER BY position, id")
+            .unwrap();
+        stmt.query_map([id], |r| r.get(0))
+            .unwrap()
+            .map(std::result::Result::unwrap)
+            .collect()
+    }
+
+    #[test]
+    fn reorder_to_top_bottom_and_after() {
+        let mut conn = setup();
+        let ids: Vec<i64> = ["a", "b", "c", "d"]
+            .iter()
+            .map(|t| add_one(&mut conn, "inbox", new(t)))
+            .collect();
+        reorder(&mut conn, ids[3], None, Some(Edge::Top)).unwrap();
+        assert_eq!(titles(&conn, "inbox"), ["d", "a", "b", "c"]);
+        reorder(&mut conn, ids[0], None, Some(Edge::Bottom)).unwrap();
+        assert_eq!(titles(&conn, "inbox"), ["d", "b", "c", "a"]);
+        let v = reorder(&mut conn, ids[0], Some(ids[3]), None).unwrap();
+        assert_eq!(titles(&conn, "inbox"), ["d", "a", "b", "c"]);
+        assert_eq!(v["item"]["title"], "a");
+        // moving an item to where it already is changes nothing
+        reorder(&mut conn, ids[0], Some(ids[3]), None).unwrap();
+        assert_eq!(titles(&conn, "inbox"), ["d", "a", "b", "c"]);
+        // sending the item already at the bottom to the bottom changes nothing
+        reorder(&mut conn, ids[2], None, Some(Edge::Bottom)).unwrap();
+        assert_eq!(titles(&conn, "inbox"), ["d", "a", "b", "c"]);
+        reorder(&mut conn, ids[1], None, Some(Edge::Bottom)).unwrap();
+        assert_eq!(titles(&conn, "inbox"), ["d", "a", "c", "b"]);
+    }
+
+    #[test]
+    fn reorder_requires_exactly_one_target() {
+        let mut conn = setup();
+        let a = add_one(&mut conn, "inbox", new("a"));
+        let b = add_one(&mut conn, "inbox", new("b"));
+        for (after, to) in [(None, None), (Some(b), Some(Edge::Top))] {
+            let err = reorder(&mut conn, a, after, to).unwrap_err().to_string();
+            assert!(err.contains("exactly one of after_item"), "{err}");
+        }
+        assert!(reorder(&mut conn, 99, None, Some(Edge::Top)).is_err());
+    }
+
+    #[test]
+    fn reorder_rejects_itself_and_items_from_other_lists() {
+        let mut conn = setup();
+        let a = add_one(&mut conn, "inbox", new("a"));
+        let w = add_one(&mut conn, "work", new("w"));
+        let err = reorder(&mut conn, a, Some(a), None)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("after itself"), "{err}");
+        let err = reorder(&mut conn, a, Some(w), None)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("isn't in list 'inbox'"), "{err}");
+        assert!(err.contains("move_item"), "{err}");
+        assert_eq!(titles(&conn, "inbox"), ["a"]);
+    }
+
+    /// A tiny deterministic generator, so this test needs no extra crate.
+    struct Rng(u64);
+    impl Rng {
+        fn next(&mut self, n: usize) -> usize {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            (self.0 % n as u64) as usize
+        }
+    }
+
+    #[test]
+    fn random_adds_and_reorders_match_a_simple_model() {
+        // Hundreds of operations, many aimed at the same spot so gaps run out
+        // and the list has to renumber. The database order must always equal
+        // a plain Vec that applies the same operations.
+        let mut conn = setup();
+        let mut model: Vec<i64> = Vec::new();
+        let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
+
+        // Where an operation puts its item, given the other items' order.
+        // Every third "after" aims at the first item so its gap keeps shrinking.
+        let pick = |rng: &mut Rng, others: &[i64]| -> Placement {
+            match rng.next(3) {
+                0 => Placement::Top,
+                1 => Placement::Bottom,
+                _ if others.is_empty() => Placement::Bottom,
+                _ if rng.next(3) == 0 => Placement::After(others[0]),
+                _ => Placement::After(others[rng.next(others.len())]),
+            }
+        };
+        let apply = |model: &mut Vec<i64>, id: i64, placement: Placement| match placement {
+            Placement::Top => model.insert(0, id),
+            Placement::Bottom => model.push(id),
+            Placement::After(after) => {
+                let at = model.iter().position(|m| *m == after).unwrap() + 1;
+                model.insert(at, id);
+            }
+        };
+
+        for step in 0..400 {
+            if !model.is_empty() && rng.next(2) == 0 {
+                // reorder an existing item
+                let id = model[rng.next(model.len())];
+                let others: Vec<i64> = model.iter().copied().filter(|m| *m != id).collect();
+                let placement = pick(&mut rng, &others);
+                match placement {
+                    Placement::Top => reorder(&mut conn, id, None, Some(Edge::Top)),
+                    Placement::Bottom => reorder(&mut conn, id, None, Some(Edge::Bottom)),
+                    Placement::After(a) => reorder(&mut conn, id, Some(a), None),
+                }
+                .unwrap();
+                model.retain(|m| *m != id);
+                apply(&mut model, id, placement);
+            } else {
+                // add a new item
+                let placement = pick(&mut rng, &model);
+                let mut item = new(&format!("n{step}"));
+                item.position = Some(match placement {
+                    Placement::Top => Position::Edge(Edge::Top),
+                    Placement::Bottom => Position::Edge(Edge::Bottom),
+                    Placement::After(after) => Position::After(After { after }),
+                });
+                let id = add_one(&mut conn, "inbox", item);
+                apply(&mut model, id, placement);
+            }
+            if step % 20 == 0 {
+                assert_eq!(order_ids(&conn, "inbox"), model, "diverged at step {step}");
+            }
+        }
+        assert_eq!(order_ids(&conn, "inbox"), model);
+        let distinct: i64 = conn
+            .query_row("SELECT COUNT(DISTINCT position) FROM item", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(distinct as usize, model.len(), "positions stay unique");
     }
 }

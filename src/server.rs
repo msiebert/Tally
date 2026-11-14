@@ -241,6 +241,15 @@ impl TallyServer {
             },
         ))
     }
+
+    #[tool(
+        description = "Change an item's place within its list: pass after_item (an item in the same list) or to = \"top\" / \"bottom\". \
+                       List order is the only way to express priority, so keep the most important items at the top. \
+                       To change lists use move_item."
+    )]
+    fn reorder_item(&self, Parameters(p): Parameters<ReorderItem>) -> CallToolResult {
+        reply(items::reorder(&mut self.db(), p.item, p.after_item, p.to))
+    }
 }
 
 #[tool_handler(router = self.tool_router)]

@@ -2,7 +2,7 @@
 //! tool schemas, so they are written for agents and kept short.
 
 use crate::store::items::{NewItem, Status};
-use crate::store::position::Position;
+use crate::store::position::{Edge, Position};
 use crate::store::refs::NameOrId;
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, de::Error};
@@ -219,4 +219,36 @@ pub struct SearchItems {
     pub cursor: Option<String>,
     /// Page size (default 50, max 200).
     pub limit: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ReorderItem {
+    /// Item ID.
+    #[serde(deserialize_with = "lenient_id")]
+    pub item: i64,
+    /// Place the item directly after this item, which must be in the same list.
+    #[serde(default, deserialize_with = "lenient_id_opt")]
+    pub after_item: Option<i64>,
+    /// Or send the item to the "top" or "bottom" of its list. Pass exactly one of after_item or to.
+    pub to: Option<Edge>,
+}
+
+/// Like [`lenient_id`], for an optional ID.
+pub fn lenient_id_opt<'de, D: Deserializer<'de>>(d: D) -> Result<Option<i64>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Raw {
+        Num(i64),
+        Text(String),
+    }
+    match Option::<Raw>::deserialize(d)? {
+        None => Ok(None),
+        Some(Raw::Num(n)) => Ok(Some(n)),
+        Some(Raw::Text(s)) => s
+            .trim()
+            .trim_start_matches('#')
+            .parse()
+            .map(Some)
+            .map_err(|_| D::Error::custom(format!("expected an item ID, got '{s}'"))),
+    }
 }
