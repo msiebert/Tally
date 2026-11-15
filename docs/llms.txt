@@ -1,0 +1,9 @@
+# Tally
+
+> A local list, task and dependency manager that AI agents use through MCP tools. Persistent between sessions, no UI, no account, data stays on the user's machine.
+
+If you are an agent that was pointed at this site, read the full usage guide first:
+
+- [Agent guide](https://msiebert.github.io/Tally/agents.md): how to install, connect and use Tally's tools
+- [Source and README](https://github.com/msiebert/Tally): code and technical details
+- [Product page](https://msiebert.github.io/Tally/): overview for humans
