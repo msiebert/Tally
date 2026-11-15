@@ -351,7 +351,7 @@ mod tests {
         items::move_to(
             &mut conn,
             3,
-            &name("launch"),
+            Some(&name("launch")),
             Some(crate::store::position::Position::Edge(
                 crate::store::position::Edge::Top,
             )),

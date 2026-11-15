@@ -344,37 +344,43 @@ pub fn delete(conn: &mut Connection, id: i64) -> Result<Value> {
 pub fn move_to(
     conn: &mut Connection,
     id: i64,
-    to_list: &NameOrId,
+    to_list: Option<&NameOrId>,
     position: Option<Position>,
 ) -> Result<Value> {
     let item = find(conn, id)?;
-    let list = lists::find(conn, to_list)?;
+    let list_id = match to_list {
+        Some(l) => lists::find(conn, l)?.id,
+        None => item.list_id,
+    };
     let placement = position.map_or(Placement::Bottom, Placement::from);
     let tx = conn.transaction()?;
-    let pos = place(&tx, list.id, placement, Some(item.id))?;
+    let pos = place(&tx, list_id, placement, Some(item.id))?;
     tx.execute(
         &format!("UPDATE item SET list_id = ?1, position = ?2, updated_at = {NOW} WHERE id = ?3"),
-        params![list.id, pos, id],
+        params![list_id, pos, id],
     )?;
     tx.commit()?;
     Ok(json!({"item": view(conn, id, true)?}))
 }
 
 /// Change an item's place within its own list. Pass exactly one of
-/// `after_item` or `to`.
+/// `after_item`, `to` or `position`.
 pub fn reorder(
     conn: &mut Connection,
     id: i64,
     after_item: Option<i64>,
     to: Option<Edge>,
+    position: Option<Position>,
 ) -> Result<Value> {
-    let placement = match (after_item, to) {
-        (Some(after), None) => Placement::After(after),
-        (None, Some(Edge::Top)) => Placement::Top,
-        (None, Some(Edge::Bottom)) => Placement::Bottom,
+    let placement = match (after_item, to, position) {
+        (Some(after), None, None) => Placement::After(after),
+        (None, Some(Edge::Top), None) => Placement::Top,
+        (None, Some(Edge::Bottom), None) => Placement::Bottom,
+        (None, None, Some(p)) => Placement::from(p),
         _ => {
             return Err(ToolError::new(
-                "Pass exactly one of after_item (an item ID in the same list) or to (\"top\" or \"bottom\").",
+                "Pass exactly one of after_item (an item ID in the same list), to (\"top\" or \"bottom\"), \
+                 or position (\"top\", \"bottom\" or {\"after\": id}).",
             ));
         }
     };
@@ -680,7 +686,7 @@ mod tests {
         add_one(&mut conn, "work", new("w1"));
         add_one(&mut conn, "work", new("w2"));
 
-        let v = move_to(&mut conn, a, &name("work"), None).unwrap();
+        let v = move_to(&mut conn, a, Some(&name("work")), None).unwrap();
         assert_eq!(v["item"]["list"], "work");
         assert_eq!(titles(&conn, "work"), ["w1", "w2", "a"]);
         assert!(titles(&conn, "inbox").is_empty());
@@ -688,7 +694,7 @@ mod tests {
         move_to(
             &mut conn,
             a,
-            &name("inbox"),
+            Some(&name("inbox")),
             Some(Position::Edge(Edge::Top)),
         )
         .unwrap();
@@ -701,12 +707,12 @@ mod tests {
         let a = add_one(&mut conn, "inbox", new("a"));
         let b = add_one(&mut conn, "inbox", new("b"));
         add_one(&mut conn, "inbox", new("c"));
-        move_to(&mut conn, a, &name("inbox"), None).unwrap();
+        move_to(&mut conn, a, Some(&name("inbox")), None).unwrap();
         assert_eq!(titles(&conn, "inbox"), ["b", "c", "a"]);
         move_to(
             &mut conn,
             a,
-            &name("inbox"),
+            Some(&name("inbox")),
             Some(Position::After(After { after: b })),
         )
         .unwrap();
@@ -720,7 +726,7 @@ mod tests {
         let mut item = new("waiting");
         item.blocked_by = Some(vec![blocker]);
         let id = add_one(&mut conn, "inbox", item);
-        move_to(&mut conn, blocker, &name("work"), None).unwrap();
+        move_to(&mut conn, blocker, Some(&name("work")), None).unwrap();
         assert_eq!(view(&conn, id, false).unwrap()["blocked"], true);
     }
 
@@ -728,14 +734,14 @@ mod tests {
     fn move_errors() {
         let mut conn = setup();
         let a = add_one(&mut conn, "inbox", new("a"));
-        assert!(move_to(&mut conn, a, &name("nope"), None).is_err());
-        assert!(move_to(&mut conn, 99, &name("work"), None).is_err());
+        assert!(move_to(&mut conn, a, Some(&name("nope")), None).is_err());
+        assert!(move_to(&mut conn, 99, Some(&name("work")), None).is_err());
         // an "after" anchor in another list is refused, and nothing moves
         let other = add_one(&mut conn, "inbox", new("other"));
         let err = move_to(
             &mut conn,
             a,
-            &name("work"),
+            Some(&name("work")),
             Some(Position::After(After { after: other })),
         )
         .unwrap_err()
@@ -762,20 +768,20 @@ mod tests {
             .iter()
             .map(|t| add_one(&mut conn, "inbox", new(t)))
             .collect();
-        reorder(&mut conn, ids[3], None, Some(Edge::Top)).unwrap();
+        reorder(&mut conn, ids[3], None, Some(Edge::Top), None).unwrap();
         assert_eq!(titles(&conn, "inbox"), ["d", "a", "b", "c"]);
-        reorder(&mut conn, ids[0], None, Some(Edge::Bottom)).unwrap();
+        reorder(&mut conn, ids[0], None, Some(Edge::Bottom), None).unwrap();
         assert_eq!(titles(&conn, "inbox"), ["d", "b", "c", "a"]);
-        let v = reorder(&mut conn, ids[0], Some(ids[3]), None).unwrap();
+        let v = reorder(&mut conn, ids[0], Some(ids[3]), None, None).unwrap();
         assert_eq!(titles(&conn, "inbox"), ["d", "a", "b", "c"]);
         assert_eq!(v["item"]["title"], "a");
         // moving an item to where it already is changes nothing
-        reorder(&mut conn, ids[0], Some(ids[3]), None).unwrap();
+        reorder(&mut conn, ids[0], Some(ids[3]), None, None).unwrap();
         assert_eq!(titles(&conn, "inbox"), ["d", "a", "b", "c"]);
         // sending the item already at the bottom to the bottom changes nothing
-        reorder(&mut conn, ids[2], None, Some(Edge::Bottom)).unwrap();
+        reorder(&mut conn, ids[2], None, Some(Edge::Bottom), None).unwrap();
         assert_eq!(titles(&conn, "inbox"), ["d", "a", "b", "c"]);
-        reorder(&mut conn, ids[1], None, Some(Edge::Bottom)).unwrap();
+        reorder(&mut conn, ids[1], None, Some(Edge::Bottom), None).unwrap();
         assert_eq!(titles(&conn, "inbox"), ["d", "a", "c", "b"]);
     }
 
@@ -785,10 +791,12 @@ mod tests {
         let a = add_one(&mut conn, "inbox", new("a"));
         let b = add_one(&mut conn, "inbox", new("b"));
         for (after, to) in [(None, None), (Some(b), Some(Edge::Top))] {
-            let err = reorder(&mut conn, a, after, to).unwrap_err().to_string();
+            let err = reorder(&mut conn, a, after, to, None)
+                .unwrap_err()
+                .to_string();
             assert!(err.contains("exactly one of after_item"), "{err}");
         }
-        assert!(reorder(&mut conn, 99, None, Some(Edge::Top)).is_err());
+        assert!(reorder(&mut conn, 99, None, Some(Edge::Top), None).is_err());
     }
 
     #[test]
@@ -796,11 +804,11 @@ mod tests {
         let mut conn = setup();
         let a = add_one(&mut conn, "inbox", new("a"));
         let w = add_one(&mut conn, "work", new("w"));
-        let err = reorder(&mut conn, a, Some(a), None)
+        let err = reorder(&mut conn, a, Some(a), None, None)
             .unwrap_err()
             .to_string();
         assert!(err.contains("after itself"), "{err}");
-        let err = reorder(&mut conn, a, Some(w), None)
+        let err = reorder(&mut conn, a, Some(w), None, None)
             .unwrap_err()
             .to_string();
         assert!(err.contains("isn't in list 'inbox'"), "{err}");
@@ -855,9 +863,9 @@ mod tests {
                 let others: Vec<i64> = model.iter().copied().filter(|m| *m != id).collect();
                 let placement = pick(&mut rng, &others);
                 match placement {
-                    Placement::Top => reorder(&mut conn, id, None, Some(Edge::Top)),
-                    Placement::Bottom => reorder(&mut conn, id, None, Some(Edge::Bottom)),
-                    Placement::After(a) => reorder(&mut conn, id, Some(a), None),
+                    Placement::Top => reorder(&mut conn, id, None, Some(Edge::Top), None),
+                    Placement::Bottom => reorder(&mut conn, id, None, Some(Edge::Bottom), None),
+                    Placement::After(a) => reorder(&mut conn, id, Some(a), None, None),
                 }
                 .unwrap();
                 model.retain(|m| *m != id);

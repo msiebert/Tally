@@ -35,7 +35,7 @@ CI runs the same checks on every commit to `main`.
 values spaced 1000 apart. Placing an item takes the midpoint between its new
 neighbours, so a reorder rewrites one row. When two neighbours have no room
 between them, the list is renumbered once and the placement retried. Ties are
-broken by item ID. `reorder_item` (and the `position` option on `add_items` and
+broken by item ID. `reorder_item` (and the `position` option on `add_items`, `reorder_item` and
 `move_item`) are the only way to express priority.
 
 ## Use with Claude Code

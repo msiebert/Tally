@@ -514,7 +514,7 @@ mod tests {
         let first = get_list(&conn, &name("inbox"), &opts).unwrap();
         let cursor = first["next_cursor"].as_str().unwrap().to_string();
         // i2 was already shown; sending it to the bottom must not show it again before i3/i4
-        items::move_to(&mut conn, 2, &name("inbox"), None).unwrap();
+        items::move_to(&mut conn, 2, Some(&name("inbox")), None).unwrap();
         let opts = ReadOptions {
             limit: Some(10),
             cursor: Some(&cursor),

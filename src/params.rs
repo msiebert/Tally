@@ -148,8 +148,8 @@ pub struct MoveItem {
     /// Item ID.
     #[serde(deserialize_with = "lenient_id")]
     pub item: i64,
-    /// The destination list's name or numeric ID.
-    pub to_list: NameOrId,
+    /// The destination list's name or numeric ID. Omit to reposition within the item's current list.
+    pub to_list: Option<NameOrId>,
     /// Where in the destination list: "top", "bottom" (default), or {"after": item_id}.
     pub position: Option<Position>,
 }
@@ -229,8 +229,11 @@ pub struct ReorderItem {
     /// Place the item directly after this item, which must be in the same list.
     #[serde(default, deserialize_with = "lenient_id_opt")]
     pub after_item: Option<i64>,
-    /// Or send the item to the "top" or "bottom" of its list. Pass exactly one of after_item or to.
+    /// Or send the item to the "top" or "bottom" of its list.
     pub to: Option<Edge>,
+    /// Same as after_item / to, in the form add_items and move_item use: "top", "bottom", or {"after": item_id}.
+    /// Pass exactly one of after_item, to or position.
+    pub position: Option<Position>,
 }
 
 /// Like [`lenient_id`], for an optional ID.

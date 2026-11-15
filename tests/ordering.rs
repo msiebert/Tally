@@ -111,3 +111,27 @@ fn order_is_kept_across_a_restart() {
     let mut s = Session::start(&db);
     assert_eq!(order(&mut s, "todo"), ["c", "a", "b"]);
 }
+
+#[test]
+fn reorder_item_accepts_position_like_other_tools() {
+    let mut s = session("order-position");
+    s.call("reorder_item", json!({"item": 4, "position": "top"}))
+        .json();
+    assert_eq!(order(&mut s, "todo"), ["d", "a", "b", "c"]);
+    s.call("reorder_item", json!({"item": 4, "position": {"after": 2}}))
+        .json();
+    assert_eq!(order(&mut s, "todo"), ["a", "b", "d", "c"]);
+    let err = s.call(
+        "reorder_item",
+        json!({"item": 1, "position": "top", "to": "top"}),
+    );
+    assert!(err.error().contains("exactly one of"), "{}", err.text);
+}
+
+#[test]
+fn move_item_without_to_list_repositions_in_place() {
+    let mut s = session("move-in-place");
+    s.call("move_item", json!({"item": 4, "position": "top"}))
+        .json();
+    assert_eq!(order(&mut s, "todo"), ["d", "a", "b", "c"]);
+}

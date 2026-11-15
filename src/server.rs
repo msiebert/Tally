@@ -24,7 +24,7 @@ Pass include_instructions / include_tag_instructions = false when you already ha
 Tags: create a tag with create_tag before using it. add_items and update_item reject unknown tags.
 
 Order: list order is priority. get_list shows items in order and hides done items unless you pass status. \
-Use reorder_item, or position (top, bottom, {after: id}) on add_items and move_item.
+Use reorder_item, or position (top, bottom, {after: id}) on add_items, move_item and reorder_item. move_item without to_list repositions within the current list.
 
 Dependencies: add_dependency makes an item wait for another, in any list. An item is blocked while any blocker is not done or cancelled. \
 Reads show blocked and open_blockers, and unblocked_only returns just the workable items. Completing a blocked item is allowed but warns.
@@ -184,14 +184,14 @@ impl TallyServer {
     }
 
     #[tool(
-        description = "Move an item to another list (or reposition it within its own list). Goes to the bottom unless position is given. \
-                       Dependencies are kept."
+        description = "Move an item to another list (to_list), or reposition it within its own list (omit to_list). \
+                       Goes to the bottom unless position is given. Dependencies are kept."
     )]
     fn move_item(&self, Parameters(p): Parameters<MoveItem>) -> CallToolResult {
         reply(items::move_to(
             &mut self.db(),
             p.item,
-            &p.to_list,
+            p.to_list.as_ref(),
             p.position,
         ))
     }
@@ -261,12 +261,19 @@ impl TallyServer {
     }
 
     #[tool(
-        description = "Change an item's place within its list: pass after_item (an item in the same list) or to = \"top\" / \"bottom\". \
+        description = "Change an item's place within its list: pass after_item (an item in the same list), to = \"top\" / \"bottom\", or position (\"top\", \"bottom\", {after: id}, \
+                       as in add_items and move_item); exactly one. \
                        List order is the only way to express priority, so keep the most important items at the top. \
-                       To change lists use move_item."
+                       To change lists use move_item with to_list."
     )]
     fn reorder_item(&self, Parameters(p): Parameters<ReorderItem>) -> CallToolResult {
-        reply(items::reorder(&mut self.db(), p.item, p.after_item, p.to))
+        reply(items::reorder(
+            &mut self.db(),
+            p.item,
+            p.after_item,
+            p.to,
+            p.position,
+        ))
     }
 }
 
