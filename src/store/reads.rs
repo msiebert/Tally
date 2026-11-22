@@ -326,6 +326,7 @@ mod tests {
         let item = NewItem {
             title: title.into(),
             notes: notes.map(Into::into),
+            due_date: None,
             tags: tag_names.map(|t| t.iter().map(|s| s.to_string()).collect()),
             position: None,
             blocked_by: None,
@@ -345,7 +346,7 @@ mod tests {
     }
 
     fn set_status(conn: &mut Connection, id: i64, status: Status) {
-        items::update(conn, id, None, None, Some(status), None).unwrap();
+        items::update(conn, id, None, None, Some(status), None, None).unwrap();
     }
 
     #[test]
@@ -479,7 +480,7 @@ mod tests {
         let cursor = first["next_cursor"].as_str().unwrap().to_string();
 
         // between pages: edit a seen item, delete an unseen one, add a new one at the bottom
-        items::update(&mut conn, ids[0], Some("i1 edited"), None, None, None).unwrap();
+        items::update(&mut conn, ids[0], Some("i1 edited"), None, None, None, None).unwrap();
         items::delete(&mut conn, ids[4]).unwrap();
         add(&mut conn, "inbox", "i8");
 
@@ -531,6 +532,7 @@ mod tests {
             .map(|i| NewItem {
                 title: format!("i{i}"),
                 notes: None,
+                due_date: None,
                 tags: None,
                 position: None,
                 blocked_by: None,
@@ -663,7 +665,7 @@ mod tests {
 
         // between pages: touch a seen item (it jumps to the front), delete an unseen one,
         // and add a brand new item (also newest)
-        items::update(&mut conn, 7, Some("i7 edited"), None, None, None).unwrap();
+        items::update(&mut conn, 7, Some("i7 edited"), None, None, None, None).unwrap();
         items::delete(&mut conn, 4).unwrap();
         add(&mut conn, "inbox", "new");
 

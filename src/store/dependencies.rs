@@ -153,6 +153,7 @@ mod tests {
                 &[NewItem {
                     title: format!("item{i}"),
                     notes: None,
+                    due_date: None,
                     tags: None,
                     position: None,
                     blocked_by: None,
@@ -180,12 +181,12 @@ mod tests {
     fn blocked_is_computed_from_blocker_status() {
         let mut conn = setup(2);
         add(&mut conn, 1, 2).unwrap();
-        items::update(&mut conn, 2, None, None, Some(Status::Doing), None).unwrap();
+        items::update(&mut conn, 2, None, None, Some(Status::Doing), None, None).unwrap();
         assert_eq!(items::view(&conn, 1, false).unwrap()["blocked"], true);
         items::complete(&mut conn, 2).unwrap();
         assert_eq!(items::view(&conn, 1, false).unwrap()["blocked"], false);
         // reopening the blocker blocks the item again
-        items::update(&mut conn, 2, None, None, Some(Status::Todo), None).unwrap();
+        items::update(&mut conn, 2, None, None, Some(Status::Todo), None, None).unwrap();
         assert_eq!(items::view(&conn, 1, false).unwrap()["blocked"], true);
     }
 

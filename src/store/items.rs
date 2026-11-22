@@ -41,6 +41,8 @@ pub struct NewItem {
     pub title: String,
     /// Optional notes, markdown (max 4,000 characters).
     pub notes: Option<String>,
+    /// Optional due date as a calendar date, YYYY-MM-DD (for example 2026-12-31).
+    pub due_date: Option<String>,
     /// Optional tag names. Tags must already exist (create_tag).
     pub tags: Option<Vec<String>>,
     /// "top", "bottom" (default), or {"after": item_id} for a spot in the list.
@@ -79,6 +81,43 @@ fn clean_notes(raw: Option<&str>) -> Result<Option<String>> {
             "Notes are limited to {MAX_NOTES_CHARS} characters (got {len}). \
              Shorten them, or split the work into several items."
         )));
+    }
+    Ok(Some(text.to_string()))
+}
+
+/// Validate a due date: a real calendar date written YYYY-MM-DD. Empty means "no due date".
+fn clean_due_date(raw: Option<&str>) -> Result<Option<String>> {
+    let Some(text) = raw.map(str::trim).filter(|t| !t.is_empty()) else {
+        return Ok(None);
+    };
+    let bad = || {
+        ToolError::new(format!(
+            "Invalid due_date '{text}'. Use a real calendar date written YYYY-MM-DD, like 2026-12-31."
+        ))
+    };
+    let b = text.as_bytes();
+    if b.len() != 10 || b[4] != b'-' || b[7] != b'-' {
+        return Err(bad());
+    }
+    let num = |r: std::ops::Range<usize>| text[r].parse::<u32>().map_err(|_| bad());
+    if !text
+        .bytes()
+        .enumerate()
+        .all(|(i, c)| i == 4 || i == 7 || c.is_ascii_digit())
+    {
+        return Err(bad());
+    }
+    let (y, m, d) = (num(0..4)?, num(5..7)?, num(8..10)?);
+    let leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+    let days = match m {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if leap => 29,
+        2 => 28,
+        _ => return Err(bad()),
+    };
+    if y == 0 || d == 0 || d > days {
+        return Err(bad());
     }
     Ok(Some(text.to_string()))
 }
@@ -129,9 +168,9 @@ pub fn open_blockers(conn: &Connection, item_id: i64) -> Result<Vec<(i64, String
 /// The compact item shape every tool returns. Empty tags and missing notes are
 /// left out, and open blockers are listed only when the item is blocked.
 pub fn view(conn: &Connection, id: i64, include_list: bool) -> Result<Value> {
-    let (title, notes, status, created_at, updated_at, list_name) = conn
+    let (title, notes, status, due_date, created_at, updated_at, list_name) = conn
         .query_row(
-            "SELECT i.title, i.notes, i.status, i.created_at, i.updated_at, l.name
+            "SELECT i.title, i.notes, i.status, i.due_date, i.created_at, i.updated_at, l.name
                FROM item i JOIN list l ON l.id = i.list_id WHERE i.id = ?1",
             [id],
             |r| {
@@ -139,9 +178,10 @@ pub fn view(conn: &Connection, id: i64, include_list: bool) -> Result<Value> {
                     r.get::<_, String>(0)?,
                     r.get::<_, Option<String>>(1)?,
                     r.get::<_, String>(2)?,
-                    r.get::<_, String>(3)?,
+                    r.get::<_, Option<String>>(3)?,
                     r.get::<_, String>(4)?,
                     r.get::<_, String>(5)?,
+                    r.get::<_, String>(6)?,
                 ))
             },
         )
@@ -163,6 +203,9 @@ pub fn view(conn: &Connection, id: i64, include_list: bool) -> Result<Value> {
     }
     out.insert("title".into(), json!(title));
     out.insert("status".into(), json!(status));
+    if let Some(due) = due_date {
+        out.insert("due_date".into(), json!(due));
+    }
     if !tag_names.is_empty() {
         out.insert("tags".into(), json!(tag_names));
     }
@@ -185,6 +228,7 @@ pub fn view(conn: &Connection, id: i64, include_list: bool) -> Result<Value> {
 fn insert_one(conn: &Connection, list: &lists::ListRow, item: &NewItem) -> Result<i64> {
     let title = clean_title(&item.title)?;
     let notes = clean_notes(item.notes.as_deref())?;
+    let due_date = clean_due_date(item.due_date.as_deref())?;
     let tag_ids = tags::resolve_names(conn, item.tags.as_deref().unwrap_or(&[]))?;
     let blockers = item.blocked_by.as_deref().unwrap_or(&[]);
     for blocker in blockers {
@@ -193,8 +237,8 @@ fn insert_one(conn: &Connection, list: &lists::ListRow, item: &NewItem) -> Resul
     let placement = item.position.map_or(Placement::Bottom, Placement::from);
     let position = place(conn, list.id, placement, None)?;
     conn.execute(
-        "INSERT INTO item (list_id, title, notes, position) VALUES (?1, ?2, ?3, ?4)",
-        params![list.id, title, notes, position],
+        "INSERT INTO item (list_id, title, notes, due_date, position) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![list.id, title, notes, due_date, position],
     )?;
     let id = conn.last_insert_rowid();
     for tag_id in tag_ids {
@@ -248,10 +292,16 @@ pub fn update(
     notes: Option<&str>,
     status: Option<Status>,
     tag_names: Option<&[String]>,
+    due_date: Option<&str>,
 ) -> Result<Value> {
-    if title.is_none() && notes.is_none() && status.is_none() && tag_names.is_none() {
+    if title.is_none()
+        && notes.is_none()
+        && status.is_none()
+        && tag_names.is_none()
+        && due_date.is_none()
+    {
         return Err(ToolError::new(
-            "Nothing to update: pass title, notes, status and/or tags.",
+            "Nothing to update: pass title, notes, status, tags and/or due_date.",
         ));
     }
     find(conn, id)?;
@@ -266,6 +316,12 @@ pub fn update(
         tx.execute(
             "UPDATE item SET notes = ?1 WHERE id = ?2",
             params![clean_notes(Some(notes))?, id],
+        )?;
+    }
+    if let Some(due) = due_date {
+        tx.execute(
+            "UPDATE item SET due_date = ?1 WHERE id = ?2",
+            params![clean_due_date(Some(due))?, id],
         )?;
     }
     if let Some(status) = status {
@@ -301,7 +357,7 @@ pub fn update(
 }
 
 pub fn complete(conn: &mut Connection, id: i64) -> Result<Value> {
-    update(conn, id, None, None, Some(Status::Done), None)
+    update(conn, id, None, None, Some(Status::Done), None, None)
 }
 
 /// Items that depend on `id`: (id, title).
@@ -416,6 +472,7 @@ mod tests {
         NewItem {
             title: title.into(),
             notes: None,
+            due_date: None,
             tags: None,
             position: None,
             blocked_by: None,
@@ -564,21 +621,23 @@ mod tests {
             Some("n"),
             Some(Status::Doing),
             Some(&tags_b),
+            Some("2026-12-31"),
         )
         .unwrap();
         assert_eq!(v["item"]["title"], "new");
         assert_eq!(v["item"]["notes"], "n");
         assert_eq!(v["item"]["status"], "doing");
         assert_eq!(v["item"]["tags"], json!(["b"]));
+        assert_eq!(v["item"]["due_date"], "2026-12-31");
         assert!(v.get("warnings").is_none());
 
         // clearing notes and tags
-        let v = update(&mut conn, id, None, Some(""), None, Some(&[])).unwrap();
+        let v = update(&mut conn, id, None, Some(""), None, Some(&[]), Some("")).unwrap();
         assert!(v["item"].get("notes").is_none());
         assert!(v["item"].get("tags").is_none());
 
-        assert!(update(&mut conn, id, None, None, None, None).is_err());
-        assert!(update(&mut conn, 99, Some("x"), None, None, None).is_err());
+        assert!(update(&mut conn, id, None, None, None, None, None).is_err());
+        assert!(update(&mut conn, 99, Some("x"), None, None, None, None).is_err());
     }
 
     #[test]
@@ -586,7 +645,7 @@ mod tests {
         let mut conn = setup();
         let id = add_one(&mut conn, "inbox", new("keep"));
         let bad = ["nope".to_string()];
-        let err = update(&mut conn, id, Some("changed"), None, None, Some(&bad))
+        let err = update(&mut conn, id, Some("changed"), None, None, Some(&bad), None)
             .unwrap_err()
             .to_string();
         assert!(err.contains("create_tag"), "{err}");
@@ -630,6 +689,7 @@ mod tests {
             None,
             None,
             Some(Status::Cancelled),
+            None,
             None,
         )
         .unwrap();
@@ -893,5 +953,37 @@ mod tests {
             })
             .unwrap();
         assert_eq!(distinct as usize, model.len(), "positions stay unique");
+    }
+
+    #[test]
+    fn due_dates_are_validated_stored_and_clearable() {
+        let mut conn = setup();
+        for good in ["2026-12-31", "2028-02-29", " 2026-01-05 "] {
+            let mut item = new("x");
+            item.due_date = Some(good.into());
+            let id = add_one(&mut conn, "inbox", item);
+            assert_eq!(view(&conn, id, false).unwrap()["due_date"], good.trim());
+        }
+        for bad in [
+            "tomorrow",
+            "2026-13-01",
+            "2027-02-29",
+            "2026-1-5",
+            "26-01-05",
+            "2026-01-32",
+            "2026/01/05",
+            "+026-01-05",
+        ] {
+            let mut item = new("x");
+            item.due_date = Some(bad.into());
+            let err = add(&mut conn, &name("inbox"), &[item]).unwrap_err();
+            assert!(err.to_string().contains("YYYY-MM-DD"), "{bad}: {err}");
+        }
+        let id = add_one(&mut conn, "inbox", new("no due"));
+        assert!(view(&conn, id, false).unwrap().get("due_date").is_none());
+        update(&mut conn, id, None, None, None, None, Some("2026-06-01")).unwrap();
+        assert_eq!(view(&conn, id, false).unwrap()["due_date"], "2026-06-01");
+        update(&mut conn, id, None, None, None, None, Some("")).unwrap();
+        assert!(view(&conn, id, false).unwrap().get("due_date").is_none());
     }
 }

@@ -12,13 +12,23 @@ const STATUS_MARKS: [(&str, &str); 4] = [
     ("cancelled", "[-]"),
 ];
 
-/// (id, title, notes, status, position, created_at, updated_at)
-type RawItem = (i64, String, Option<String>, String, i64, String, String);
+/// (id, title, notes, status, position, created_at, updated_at, due_date)
+type RawItem = (
+    i64,
+    String,
+    Option<String>,
+    String,
+    i64,
+    String,
+    String,
+    Option<String>,
+);
 
 struct ItemRow {
     id: i64,
     title: String,
     notes: Option<String>,
+    due_date: Option<String>,
     status: String,
     position: i64,
     created_at: String,
@@ -78,7 +88,7 @@ fn snapshot(conn: &Connection) -> Result<Snapshot> {
           WHERE it.item_id = ?1 ORDER BY t.name COLLATE NOCASE",
     )?;
     let mut item_stmt = conn.prepare(
-        "SELECT id, title, notes, status, position, created_at, updated_at
+        "SELECT id, title, notes, status, position, created_at, updated_at, due_date
            FROM item WHERE list_id = ?1 ORDER BY position, id",
     )?;
     let mut list_stmt = conn
@@ -101,11 +111,12 @@ fn snapshot(conn: &Connection) -> Result<Snapshot> {
                     r.get(4)?,
                     r.get(5)?,
                     r.get(6)?,
+                    r.get(7)?,
                 ))
             })?
             .collect::<rusqlite::Result<_>>()?;
         let mut items = Vec::new();
-        for (item_id, title, notes, status, position, created, updated) in rows {
+        for (item_id, title, notes, status, position, created, updated, due_date) in rows {
             let tags: Vec<String> = tag_stmt
                 .query_map([item_id], |r| r.get(0))?
                 .collect::<rusqlite::Result<_>>()?;
@@ -118,6 +129,7 @@ fn snapshot(conn: &Connection) -> Result<Snapshot> {
                 id: item_id,
                 title,
                 notes,
+                due_date,
                 status,
                 position,
                 created_at: created,
@@ -167,6 +179,7 @@ pub fn to_json(conn: &Connection) -> Result<Value> {
                     m.insert("position".into(), json!(i.position));
                     m.insert("tags".into(), json!(i.tags));
                     m.insert("blocked_by".into(), json!(i.blocked_by));
+                    opt(&mut m, "due_date", &i.due_date);
                     opt(&mut m, "notes", &i.notes);
                     m.insert("created_at".into(), json!(i.created_at));
                     m.insert("updated_at".into(), json!(i.updated_at));
@@ -273,6 +286,9 @@ pub fn to_markdown(conn: &Connection) -> Result<String> {
             if i.status == "doing" || i.status == "cancelled" {
                 out.push_str(&format!(" ({})", i.status));
             }
+            if let Some(due) = &i.due_date {
+                out.push_str(&format!(" — due {due}"));
+            }
             if !i.tags.is_empty() {
                 out.push_str(&format!(" — tags: {}", i.tags.join(", ")));
             }
@@ -326,6 +342,7 @@ mod tests {
         let item = |title: &str, notes: Option<&str>, tags: &[&str]| NewItem {
             title: title.into(),
             notes: notes.map(Into::into),
+            due_date: None,
             tags: Some(tags.iter().map(|t| t.to_string()).collect()),
             position: None,
             blocked_by: None,
@@ -341,7 +358,7 @@ mod tests {
         )
         .unwrap();
         dependencies::add(&mut conn, 3, 2).unwrap();
-        items::update(&mut conn, 1, None, None, Some(Status::Doing), None).unwrap();
+        items::update(&mut conn, 1, None, None, Some(Status::Doing), None, None).unwrap();
         conn
     }
 

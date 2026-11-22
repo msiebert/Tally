@@ -9,6 +9,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/001_init.sql"),
     include_str!("../migrations/002_list_name_nocase.sql"),
     include_str!("../migrations/003_tag_name_nocase.sql"),
+    include_str!("../migrations/004_item_due_date.sql"),
 ];
 
 /// `TALLY_DB` if set and non-empty, otherwise `~/.local/share/tally/tally.db`.
