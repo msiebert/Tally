@@ -20,10 +20,10 @@ For other MCP clients, register the command `tally` as a stdio MCP server. Set `
 
 1. **Start by reading.** Call `list_lists` to see what exists. Call `get_list` for a list: it returns the items in priority order plus the list's `instructions` and `tag_instructions`. These are written by the user. Read and follow them.
 2. **Create things before using them.** `create_list` (name, optional instructions). `create_tag` before putting a tag on an item; unknown tags are rejected.
-3. **Add work.** `add_items` adds up to 200 items to a list in one all-or-nothing call. Each item can have notes, tags, a `position` and blockers. It is not idempotent: never repeat a call that succeeded.
+3. **Add work.** `add_items` adds up to 200 items to a list in one all-or-nothing call. Each item can have notes, a `due_date` (`YYYY-MM-DD`), tags, a `position` and blockers. It is not idempotent: never repeat a call that succeeded.
 4. **Order is priority.** First item = most important. Use `reorder_item` or `position` (`"top"`, `"bottom"`, `{"after": item_id}`) on `add_items`, `move_item` and `reorder_item`.
 5. **Dependencies.** `add_dependency` (item, blocked_by) makes an item wait for another, even across lists. `get_list` / `search_items` with `unblocked_only: true` returns only workable items. Cycles are rejected.
-6. **Progress.** `update_item` changes title, notes, tags or status (`todo`, `doing`, `done`, `cancelled`). `complete_item` marks done; it warns, but does not refuse, if blockers are still open.
+6. **Progress.** `update_item` changes title, notes, `due_date` (empty string clears it), tags or status (`todo`, `doing`, `done`, `cancelled`). `complete_item` marks done; it warns, but does not refuse, if blockers are still open.
 7. **Find things.** `search_items` searches all lists by text, tag, status and list.
 8. **Move or delete.** `move_item` with `to_list` changes list; without it, repositions within the list. Deletes that would break a dependency are refused, and the error says what to remove first.
 

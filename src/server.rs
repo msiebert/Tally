@@ -155,7 +155,7 @@ impl TallyServer {
 
     #[tool(
         description = "Tags must already exist (create_tag first); unknown tags are rejected. Change an item's title, notes (empty clears), \
-                       status (todo, doing, done, cancelled) and/or tags. tags replaces the item's whole tag set."
+                       due_date (YYYY-MM-DD; empty clears), status (todo, doing, done, cancelled) and/or tags. tags replaces the item's whole tag set."
     )]
     fn update_item(&self, Parameters(p): Parameters<UpdateItem>) -> CallToolResult {
         reply(items::update(
@@ -165,6 +165,7 @@ impl TallyServer {
             p.notes.as_deref(),
             p.status,
             p.tags.as_deref(),
+            p.due_date.as_deref(),
         ))
     }
 

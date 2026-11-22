@@ -130,6 +130,8 @@ pub struct UpdateItem {
     pub title: Option<String>,
     /// New notes (markdown, max 4,000 characters). An empty string clears them.
     pub notes: Option<String>,
+    /// New due date, YYYY-MM-DD. An empty string clears it.
+    pub due_date: Option<String>,
     /// New status.
     pub status: Option<Status>,
     /// Replaces the item's whole tag set; an empty list removes all tags. Tags must already exist.
